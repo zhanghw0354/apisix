@@ -15,7 +15,7 @@
 -- limitations under the License.
 --
 local core        = require("apisix.core")
-local plugin_name = "proxy-rewrite"
+local plugin_name = "proxy-rewrite-skywalking"
 local pairs       = pairs
 local ipairs      = ipairs
 local ngx         = ngx
