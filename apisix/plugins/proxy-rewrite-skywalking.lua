@@ -391,22 +391,29 @@ do
 
             local field_cnt = #hdr_op.set
             for i = 1, field_cnt, 2 do
-                local list = split(core.request.header(ctx,"sw8"),"-")
                 local val = core.utils.resolve_var(hdr_op.set[i + 1], ctx.var)
-                if hdr_op.set[i]== "x-yun-tid" and #list==8 then
-                    local res,info = pcall(dec,list[2])
-                    if res then
-                        val = info
-                        core.log.error("failed to create header operation 1: ", val)
+                local sw8 = core.request.header(ctx,"sw8")
+                if sw8 == nil then
+                    val = get_request_id("uuid")
+                    core.log.info("create header operation 0: ", val)
+                    core.request.set_header(hdr_op.set[i], val)
+                else
+                    local list = split(core.request.header(ctx,"sw8"),"-")
+                    if hdr_op.set[i]== "x-yun-tid" and #list==8 then
+                        local res,info = pcall(dec,list[2])
+                        if res then
+                            val = info
+                            core.log.info("create header operation 1: ", val)
+                        else
+                            val = get_request_id("uuid")
+                            core.log.info("create header operation 2: ", val)
+                        end
                     else
                         val = get_request_id("uuid")
-                        core.log.error("failed to create header operation 2: ", val)
+                        core.log.info("create header operation 3: ", val)
                     end
-                else
-                    val = get_request_id("uuid")
-                    core.log.error("failed to create header operation 3: ", val)
+                    core.request.set_header(hdr_op.set[i], val)
                 end
-                core.request.set_header(hdr_op.set[i], val)
             end
 
             local field_cnt = #hdr_op.remove
