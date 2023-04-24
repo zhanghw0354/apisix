@@ -24,6 +24,11 @@ local re_sub      = ngx.re.sub
 local sub_str     = string.sub
 local str_find    = core.string.find
 
+local snowflake_inited = nil
+local uuid = require("resty.jit-uuid")
+local nanoid = require("nanoid")
+local snowflake = require("snowflake")
+
 local switch_map = {GET = ngx.HTTP_GET, POST = ngx.HTTP_POST, PUT = ngx.HTTP_PUT,
                     HEAD = ngx.HTTP_HEAD, DELETE = ngx.HTTP_DELETE,
                     OPTIONS = ngx.HTTP_OPTIONS, MKCOL = ngx.HTTP_MKCOL,
@@ -203,6 +208,52 @@ function split(str,reps)
     return resultStrList
 end
 
+local function get_request_id(algorithm)
+    if algorithm == "uuid" then
+        return uuid()
+    end
+    if algorithm == "nanoid" then
+        return nanoid.safe_simple()
+    end
+    return next_id()
+end
+
+local function next_id()
+    if snowflake_inited == nil then
+        snowflake_init()
+    end
+    return snowflake:next_id()
+end
+
+
+local function snowflake_init()
+    if snowflake_inited == nil then
+        local max_number = math_pow(2, (attr.snowflake.data_machine_bits))
+        local datacenter_id_bits = math_floor(attr.snowflake.data_machine_bits / 2)
+        local node_id_bits = math_ceil(attr.snowflake.data_machine_bits / 2)
+        data_machine = gen_data_machine(max_number)
+        if data_machine == nil then
+            return ""
+        end
+
+        local worker_id, datacenter_id = split_data_machine(data_machine,
+                node_id_bits, datacenter_id_bits)
+
+        core.log.info("snowflake init datacenter_id: " ..
+                datacenter_id .. " worker_id: " .. worker_id)
+        snowflake.init(
+                datacenter_id,
+                worker_id,
+                attr.snowflake.snowflake_epoc,
+                node_id_bits,
+                datacenter_id_bits,
+                attr.snowflake.sequence_bits,
+                attr.delta_offset
+        )
+        snowflake_inited = true
+    end
+end
+
 function _M.check_schema(conf)
     local ok, err = core.schema.check(schema, conf)
     if not ok then
@@ -333,15 +384,28 @@ do
 
             local field_cnt = #hdr_op.add
             for i = 1, field_cnt, 2 do
-                local val = core.utils.resolve_var(hdr_op.set[i + 1], ctx.var)
-                if hdr_op.set[i]== "x-yun-tid" then
-                    val = dec(split(core.request.header(ctx,"sw8"),"-")[2])
-                end
-                core.request.set_header(hdr_op.set[i], val)
+                local val = core.utils.resolve_var(hdr_op.add[i + 1], ctx.var)
+                local header = hdr_op.add[i]
+                core.request.add_header(header, val)
             end
+
             local field_cnt = #hdr_op.set
             for i = 1, field_cnt, 2 do
+                local list = split(core.request.header(ctx,"sw8"),"-")
                 local val = core.utils.resolve_var(hdr_op.set[i + 1], ctx.var)
+                if hdr_op.set[i]== "x-yun-tid" and #list==8 then
+                    local res,info = pcall(dec,list[2])
+                    if res then
+                        val = info
+                        core.log.error("failed to create header operation 1: ", val)
+                    else
+                        val = get_request_id("uuid")
+                        core.log.error("failed to create header operation 2: ", val)
+                    end
+                else
+                    val = get_request_id("uuid")
+                    core.log.error("failed to create header operation 3: ", val)
+                end
                 core.request.set_header(hdr_op.set[i], val)
             end
 
