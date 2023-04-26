@@ -403,7 +403,7 @@ do
             end
 
             local field_cnt = #hdr_op.set
-            for i = 1, field_cnt, 2 do
+			for i = 1, field_cnt, 2 do
                 local sw8 = core.request.header(ctx,"sw8")
                 if sw8 ~= nil then
                     local list = split(core.request.header(ctx,"sw8"),"-")
@@ -413,7 +413,9 @@ do
                         if res then
                             list[2]=info
                             local result = table.concat(list,"-")
-                            core.request.set_header(hdr_op.set[i], result)
+                            core.request.set_header("sw8", result)
+                        else
+                            core.log.error("create header operation error: ", info)
                         end
                     end
                 end
