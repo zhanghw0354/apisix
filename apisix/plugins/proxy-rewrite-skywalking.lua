@@ -23,6 +23,7 @@ local type        = type
 local re_sub      = ngx.re.sub
 local sub_str     = string.sub
 local str_find    = core.string.find
+local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
 local snowflake_inited = nil
 local uuid = require("resty.jit-uuid")
@@ -185,7 +186,6 @@ local function check_set_headers(headers)
 end
 
 function dec(data)
-    local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
     data = string.gsub(data, '[^'..b..'=]', '')
     return (data:gsub('.', function(x)
         if (x == '=') then return '' end
@@ -198,6 +198,19 @@ function dec(data)
         for i=1,8 do c=c+(x:sub(i,i)=='1' and 2^(8-i) or 0) end
         return string.char(c)
     end))
+end
+
+function enc(data)
+    return ((data:gsub('.', function(x)
+        local r,b='',x:byte()
+        for i=8,1,-1 do r=r..(b%2^i-b%2^(i-1)>0 and '1' or '0') end
+        return r;
+    end)..'0000'):gsub('%d%d%d?%d?%d?%d?', function(x)
+        if (#x < 6) then return '' end
+        local c=0
+        for i=1,6 do c=c+(x:sub(i,i)=='1' and 2^(6-i) or 0) end
+        return b:sub(c+1,c+1)
+    end)..({ '', '==', '=' })[#data%3+1])
 end
 
 function split(str,reps)
@@ -391,28 +404,18 @@ do
 
             local field_cnt = #hdr_op.set
             for i = 1, field_cnt, 2 do
-                local val = core.utils.resolve_var(hdr_op.set[i + 1], ctx.var)
                 local sw8 = core.request.header(ctx,"sw8")
-                if sw8 == nil then
-                    val = get_request_id("uuid")
-                    core.log.info("create header operation 0: ", val)
-                    core.request.set_header(hdr_op.set[i], val)
-                else
+                if sw8 ~= nil then
                     local list = split(core.request.header(ctx,"sw8"),"-")
+                    local tid = core.request.header(ctx,"x-yun-tid")
                     if hdr_op.set[i]== "x-yun-tid" and #list==8 then
-                        local res,info = pcall(dec,list[2])
+                        local res,info = pcall(enc,tid)
                         if res then
-                            val = info
-                            core.log.info("create header operation 1: ", val)
-                        else
-                            val = get_request_id("uuid")
-                            core.log.info("create header operation 2: ", val)
+                            list[2]=info
+                            local result = table.concat(list,"-")
+                            core.request.set_header(hdr_op.set[i], result)
                         end
-                    else
-                        val = get_request_id("uuid")
-                        core.log.info("create header operation 3: ", val)
                     end
-                    core.request.set_header(hdr_op.set[i], val)
                 end
             end
 
